@@ -4,4 +4,6 @@ llm:
     model_name: "gpt-4o-mini"
   groq:
     provider: "groq"
-    model_name: "llama-3.1-8b-instant"
+    # Llama 3.1 8B Instant was retired from the Groq developer tier on
+    # 2026-08-16. Qwen 3.6 supports the local tool-calling workflow used here.
+    model_name: "qwen/qwen3.6-27b"

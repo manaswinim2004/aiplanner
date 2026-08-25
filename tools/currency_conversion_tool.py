@@ -15,7 +15,7 @@ class CurrencyConverterTool:
         """Setup all tools for the currency converter tool"""
         @tool
         def convert_currency(amount:float, from_currency:str, to_currency:str):
-            """Convert amount from one currency to another"""
+            """Get a live currency conversion. Use amount 1.0 to obtain current exchange rate."""
             return self.currency_service.convert(amount, from_currency, to_currency)
         
         return [convert_currency]

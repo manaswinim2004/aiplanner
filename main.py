@@ -5,8 +5,10 @@ from utils.save_to_document import save_document
 from starlette.responses import JSONResponse
 import os
 import datetime
+import re
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from langchain_core.messages import HumanMessage
 load_dotenv()
 
 app = FastAPI()
@@ -21,28 +23,63 @@ app.add_middleware(
 class QueryRequest(BaseModel):
     question: str
 
+
+def _destination_from_question(question: str) -> str:
+    """Extract a destination for deterministic live-data requests."""
+    match = re.search(r"\b(?:to|visit|in)\s+([A-Za-z][A-Za-z .'-]*?)(?=\s+(?:for|with|in)\b|[?.!,]|$)", question, re.IGNORECASE)
+    return match.group(1).strip() if match else question.strip()
+
+
+def _run_tool(tool, arguments: dict):
+    try:
+        return tool.invoke(arguments)
+    except Exception as error:
+        return f"Live lookup unavailable: {error}"
+
+
+def _live_trip_data(graph: GraphBuilder, destination: str) -> dict:
+    """Call every external live-data tool once for each travel request."""
+    weather_tools = graph.weather_tools.weather_tool_list
+    place_tools = graph.place_search_tools.place_search_tool_list
+    currency_tools = graph.currency_converter_tools.currency_converter_tool_list
+
+    return {
+        "current_weather": _run_tool(weather_tools[0], {"city": destination}),
+        "weather_forecast": _run_tool(weather_tools[1], {"city": destination}),
+        "attractions": _run_tool(place_tools[0], {"place": destination}),
+        "restaurants": _run_tool(place_tools[1], {"place": destination}),
+        "activities": _run_tool(place_tools[2], {"place": destination}),
+        "transportation": _run_tool(place_tools[3], {"place": destination}),
+        "usd_to_inr": _run_tool(
+            currency_tools[0],
+            {"amount": 1.0, "from_currency": "USD", "to_currency": "INR"},
+        ),
+    }
+
+
 @app.post("/query")
 async def query_travel_agent(query:QueryRequest):
     try:
         print(query)
         graph = GraphBuilder(model_provider="groq")
-        react_app=graph()
-        #react_app = graph.build_graph()
+        destination = _destination_from_question(query.question)
+        live_data = _live_trip_data(graph, destination)
+        live_context = "\n\n".join(
+            f"{name}: {str(value)[:3500]}" for name, value in live_data.items()
+        )
+        response = graph.llm.invoke([
+            graph.system_prompt,
+            HumanMessage(content=(
+                f"Travel request: {query.question}\n\n"
+                f"<live_data destination=\"{destination}\">\n{live_context}\n</live_data>\n\n"
+                "Create the travel plan from this live data. Do not invent current weather, "
+                "places, transport, or exchange rates when a lookup failed."
+            )),
+        ])
+        final_output = response.content
 
-        png_graph = react_app.get_graph().draw_mermaid_png()
-        with open("my_graph.png", "wb") as f:
-            f.write(png_graph)
-
-        print(f"Graph saved as 'my_graph.png' in {os.getcwd()}")
-        # Assuming request is a pydantic object like: {"question": "your text"}
-        messages={"messages": [query.question]}
-        output = react_app.invoke(messages)
-
-        # If result is dict with messages:
-        if isinstance(output, dict) and "messages" in output:
-            final_output = output["messages"][-1].content  # Last AI response
-        else:
-            final_output = str(output)
+        if not final_output or not str(final_output).strip():
+            raise RuntimeError("The model returned an empty final response.")
         
         return {"answer": final_output}
     except Exception as e:
