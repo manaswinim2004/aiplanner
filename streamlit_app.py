@@ -9,7 +9,7 @@ import sys
 
 # Do not include a trailing slash: adding the route below would otherwise request
 # `//query`, which is not the FastAPI route served by the deployed backend.
-BASE_URL = os.getenv("BACKEND_URL", "https://aiplanner-2vtw.onrender.com").rstrip("/")
+BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 st.set_page_config(
     page_title="🌍 Travel Planner Agentic Application",

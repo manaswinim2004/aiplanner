@@ -25,8 +25,6 @@ class GraphBuilder():
                            * self.calculator_tools.calculator_tool_list,
                            * self.currency_converter_tools.currency_converter_tool_list])
         
-        # After tools return, use base model to write final answer instead of
-        # starting another tool loop.
         self.llm_with_tools = self.llm.bind_tools(tools=self.tools)
         
         self.graph = None
@@ -34,12 +32,12 @@ class GraphBuilder():
         self.system_prompt = SYSTEM_PROMPT
     
     
-    def agent_function(self,state: MessagesState):
-        """Main agent function"""
+    def agent_function(self, state: MessagesState):
+        """Main agent function — always uses llm_with_tools so the LLM can
+        continue calling tools after reviewing previous tool results."""
         user_question = state["messages"]
         input_question = [self.system_prompt] + user_question
-        has_tool_results = any(message.type == "tool" for message in user_question)
-        response = self.llm.invoke(input_question) if has_tool_results else self.llm_with_tools.invoke(input_question)
+        response = self.llm_with_tools.invoke(input_question)
         return {"messages": [response]}
     def build_graph(self):
         graph_builder=StateGraph(MessagesState)
